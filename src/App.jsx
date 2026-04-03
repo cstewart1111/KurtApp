@@ -97,21 +97,14 @@ function UploadScreen({ onAnalysisComplete }) {
       const res = await apiCall('/api/analyze', { method: 'POST', body: fd })
       const data = await res.json()
       if (!res.ok) throw new Error(data.detail || 'Analysis failed')
-      setDonorResult(data)
-      setStep('donor_done')
+      onAnalysisComplete(data)
     } catch (e) {
       setError(e.message)
       setStep('error')
     }
   }
 
-  const handleAnalyze = async () => {
-    // Analysis already ran during upload — just surface results
-    if (donorResult) {
-      setStep('analyzing')
-      setTimeout(() => onAnalysisComplete(donorResult), 300)
-    }
-  }
+  const handleAnalyze = () => {}
 
   const stepIdx = { idle: 0, uploading: 0, donor_done: 1, analyzing: 2, done: 3 }[step] ?? 0
 
@@ -244,7 +237,7 @@ function UploadScreen({ onAnalysisComplete }) {
             disabled={step === 'uploading'}
             style={{ width: '100%', justifyContent: 'center', marginTop: '1rem' }}
           >
-            {step === 'uploading' ? <><RefreshCw size={14} style={{ animation: 'spin 1s linear infinite' }} /> Validating…</> : <><Upload size={14} /> Upload & Validate</>}
+            {step === 'uploading' ? <><RefreshCw size={14} style={{ animation: 'spin 1s linear infinite' }} /> Validating…</> : <><Sparkles size={14} /> Upload & Analyze</>}
           </button>
         )}
       </div>
@@ -790,13 +783,16 @@ function SOWPanel() {
     setLoading(true)
     setError(null)
     try {
-      const params = new URLSearchParams({
-        prospect_name: prospect,
-        ohp_completed: ohpDone,
-        years_requested: years,
-        ...(contact ? { contact_name: contact } : {}),
+      const res = await apiCall('/api/sow', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          prospect_name: prospect,
+          ohp_completed: ohpDone,
+          years_requested: years,
+          ...(contact ? { contact_name: contact } : {}),
+        }),
       })
-      const res = await apiCall(`/api/sow?${params}`, { method: 'POST' })
       const data = await res.json()
       if (!res.ok) throw new Error(data.detail || 'Generation failed')
       setSow(data.sow)
@@ -921,7 +917,10 @@ function DashboardScreen({ data, onReset, sessionWarning, onDismissWarning }) {
   const handleDownload = async () => {
     setDownloading(true)
     try {
-      const res = await apiCall('/api/report/download')
+      const stored = JSON.parse(sessionStorage.getItem('dhc_analysis') || '{}')
+      const cn = encodeURIComponent(stored.client_name || 'Client')
+      const yr = stored.analysis_year || new Date().getFullYear()
+      const res = await apiCall(`/api/report/download?client_name=${cn}&analysis_year=${yr}`)
       if (!res.ok) throw new Error('Download failed')
       const blob = await res.blob()
       const cd = res.headers.get('Content-Disposition') || ''
@@ -1099,6 +1098,10 @@ export default function App() {
 
   const handleComplete = (data) => {
     setAnalysisData(data)
+    sessionStorage.setItem('dhc_analysis', JSON.stringify({
+      client_name: data.client_name,
+      analysis_year: data.analysis_year,
+    }))
   }
 
   const handleReset = () => {
