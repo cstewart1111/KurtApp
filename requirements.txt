@@ -1,0 +1,6 @@
+fastapi==0.115.5
+python-multipart==0.0.9
+pandas==2.1.4
+numpy==1.26.4
+anthropic==0.40.0
+pydantic==2.5.3

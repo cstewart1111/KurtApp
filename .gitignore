@@ -1,0 +1,19 @@
+# Python
+__pycache__/
+*.pyc
+.env
+*.env
+
+# Node
+node_modules/
+dist/
+
+# Uploads / client data — never commit
+*.csv
+uploads/
+
+# Vercel
+.vercel/
+
+# OS
+.DS_Store
