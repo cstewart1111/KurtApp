@@ -467,6 +467,22 @@ function GrowthDynamicsPanel({ gd, year }) {
           {net >= 0 ? '+' : ''}{fmt(net)}
         </p>
       </div>
+      {(gd.retained_donors?.coverage_ratio || gd.coverage_ratio_acquisition) && (
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem', marginTop: '0.75rem' }}>
+          {gd.retained_donors?.coverage_ratio && (
+            <div style={{ padding: '0.65rem', background: 'var(--teal-50)', borderRadius: 'var(--radius-md)', textAlign: 'center' }}>
+              <p className="label" style={{ marginBottom: '0.2rem', fontSize: '0.58rem' }}>Coverage Ratio (Upgrade/Downgrade)</p>
+              <p style={{ fontFamily: 'var(--font-display)', fontSize: '1.2rem', fontWeight: 600, color: 'var(--teal-800)' }}>{(gd.retained_donors.coverage_ratio * 100).toFixed(0)}%</p>
+            </div>
+          )}
+          {gd.coverage_ratio_acquisition && (
+            <div style={{ padding: '0.65rem', background: 'var(--amber-50)', borderRadius: 'var(--radius-md)', textAlign: 'center' }}>
+              <p className="label" style={{ marginBottom: '0.2rem', fontSize: '0.58rem' }}>Coverage Ratio (New+Reactive/Lapsed)</p>
+              <p style={{ fontFamily: 'var(--font-display)', fontSize: '1.2rem', fontWeight: 600, color: 'var(--amber-600)' }}>{(gd.coverage_ratio_acquisition * 100).toFixed(0)}%</p>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   )
 }
@@ -901,7 +917,7 @@ function DashboardScreen({ data, onReset, sessionWarning, onDismissWarning }) {
   const [activeTab, setActiveTab] = useState('overview')
   const [selectedSegment, setSelectedSegment] = useState(null)
   const [downloading, setDownloading] = useState(false)
-  const { metrics, growth_dynamics: gd, ltv, file_growth: fg } = data
+  const { metrics, growth_dynamics: gd, ltv, file_growth: fg, large_gift: lg, summary_kpis: kpis } = data
   const totals = metrics?.totals ?? {}
   const year = data.analysis_year
 
@@ -975,9 +991,9 @@ function DashboardScreen({ data, onReset, sessionWarning, onDismissWarning }) {
           {/* KPI row */}
           <div className="metric-grid">
             <KPICard label="Active Donors" value={totals.active_donors} icon={Users} delay={1} />
-            <KPICard label="Total Revenue" value={totals.total_revenue} prefix="$" icon={DollarSign} delay={2} decimals={0} />
-            <KPICard label="Overall Retention" value={totals.overall_retention_pct} suffix="%" icon={Heart} delay={3} decimals={1} />
-            <KPICard label="Avg Gift" value={totals.average_gift} prefix="$" icon={TrendingUp} delay={4} decimals={0} />
+            <KPICard label="General Revenue" value={kpis?.general_revenue ?? totals.total_revenue} prefix="$" icon={DollarSign} delay={2} decimals={0} />
+            <KPICard label="Overall Retention" value={kpis?.overall_retention_pct ?? totals.overall_retention_pct} suffix="%" icon={Heart} delay={3} decimals={1} />
+            <KPICard label="Renewal (13–24 Mo)" value={kpis?.renewal_13_24_pct} suffix="%" icon={TrendingUp} delay={4} decimals={1} />
           </div>
 
           {/* File growth */}
@@ -1001,6 +1017,30 @@ function DashboardScreen({ data, onReset, sessionWarning, onDismissWarning }) {
             </div>
           )}
 
+          {/* Large Gift Donors ($10k+) — per DHC methodology, tracked separately from lifecycle */}
+          {lg && (
+            <div className="card animate-in" style={{ marginBottom: '1.25rem', borderTop: '3px solid var(--amber-500)' }}>
+              <p className="label" style={{ marginBottom: '1rem' }}>Revenue Summary</p>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '0.75rem' }}>
+                {[
+                  { label: 'General Revenue', value: kpis?.general_revenue, color: 'var(--teal-800)' },
+                  { label: `Large Gift ($${(lg.threshold/1000).toFixed(0)}k+)`, value: lg.revenue, color: 'var(--amber-600)' },
+                  { label: 'Total Revenue', value: lg.total_revenue, color: 'var(--teal-800)', bold: true },
+                  { label: 'Large Gift %', value: lg.pct_of_total, suffix: '%', color: 'var(--amber-600)' },
+                ].map(({ label, value, color, bold, suffix }) => (
+                  <div key={label} style={{ textAlign: 'center', padding: '0.75rem', background: 'var(--cream)', borderRadius: 'var(--radius-md)' }}>
+                    <p className="label" style={{ marginBottom: '0.3rem', fontSize: '0.58rem' }}>{label}</p>
+                    <p style={{ fontFamily: 'var(--font-display)', fontSize: bold ? '1.5rem' : '1.3rem', fontWeight: bold ? 700 : 600, color, lineHeight: 1 }}>
+                      {suffix ? `${value?.toFixed(1)}${suffix}` : `$${value?.toLocaleString('en-US', { maximumFractionDigits: 0 }) ?? '—'}`}
+                    </p>
+                    {label === `Large Gift ($${(lg.threshold/1000).toFixed(0)}k+)` && (
+                      <p style={{ fontSize: '0.65rem', color: 'var(--stone-400)', marginTop: 2 }}>{lg.donor_count?.toLocaleString()} donors</p>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
           <div className="grid-2" style={{ marginBottom: '1.25rem' }}>
             <RevenueBySegment metrics={metrics} />
             {gd && <GrowthDynamicsPanel gd={gd} year={year} />}

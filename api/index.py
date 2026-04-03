@@ -20,6 +20,7 @@ from segmentation import build_donor_summary, segment_donors as run_seg
 from analytics import (
     compute_all_metrics, compute_file_growth,
     compute_growth_dynamics, compute_ltv_projection,
+    compute_large_gift_donors,
 )
 
 # ── App ───────────────────────────────────────────────────────────────────────
@@ -144,6 +145,16 @@ async def analyze(
     missing_amounts = int(df["donation_amount"].isna().sum())
     df = df[df["donation_amount"] > 0].dropna(subset=["donation_amount"])
 
+    # Filter deceased / gone away / bad address (Data Guide field 8)
+    deceased_removed = 0
+    for col in ["deceased", "bad_address", "gone_away", "do_not_contact"]:
+        if col in df.columns:
+            mask = df[col].astype(str).str.upper().isin(["Y", "YES", "1", "TRUE"])
+            deceased_removed += int(mask.sum())
+            df = df[~mask]
+    if deceased_removed > 0:
+        flags.append(f"Removed {deceased_removed} records flagged as deceased/bad address/gone away.")
+
     fy = fiscal_year_end_month
     df["fiscal_year"] = df["donation_date"].apply(
         lambda d: d.year + 1 if (fy != 12 and d.month > fy) else d.year
@@ -157,6 +168,10 @@ async def analyze(
     final = len(df)
     flagged = original - final
     confidence = max(0, 100 - min(50, int(flagged / original * 100)) - len(flags) * 10)
+
+    # Large Gift Donors ($10k+) — computed from raw df per DHC methodology
+    # These are tracked SEPARATELY from the lifecycle analysis (DHC sample pages 4-6)
+    large_gift = compute_large_gift_donors(df, analysis_year=year)
 
     # Optional OHP join
     ohp_info = None
@@ -186,6 +201,11 @@ async def analyze(
     gd      = compute_growth_dynamics(segs, year)
     ltv     = compute_ltv_projection(segs, year)
 
+    # Renewal (13-24) — surface as top-level KPI (it's in every DHC Summary table)
+    renewal_13_24 = metrics.get("segments", {}).get(
+        "lapsed_13_24", {}
+    ).get("pct_donors_giving", None)
+
     return {
         "status": "complete",
         "client_name": client_name,
@@ -194,6 +214,25 @@ async def analyze(
         "file_growth": fg,
         "growth_dynamics": gd,
         "ltv": ltv,
+        "large_gift": large_gift,
+        "summary_kpis": {
+            "overall_retention_pct": metrics.get("totals", {}).get("overall_retention_pct"),
+            "renewal_13_24_pct": renewal_13_24,
+            "overall_frequency": metrics.get("totals", {}).get("gifts_per_active_donor"),
+            "average_gift": metrics.get("totals", {}).get("average_gift"),
+            "revenue_per_active": metrics.get("totals", {}).get("revenue_per_active"),
+            "general_revenue": large_gift.get("general_revenue"),
+            "large_gift_revenue": large_gift.get("revenue"),
+            "total_revenue": large_gift.get("total_revenue"),
+        },
+        "data_rules": {
+            "donor_exclusions": "Deceased, bad address, and gone away records removed"
+                                if deceased_removed > 0 else "All donors included",
+            "gift_exclusions": "Positive amounts only; $0 and negative gifts excluded",
+            "fiscal_year_basis": f"{'Jul' if fy == 6 else 'Jan'}–{'Jun' if fy == 6 else 'Dec'}",
+            "analysis_year": year,
+            "data_through": f"FY{year} end",
+        },
         "data_quality": {
             "records_parsed": final, "records_flagged": flagged,
             "unique_donors": int(df["account_id"].nunique()),

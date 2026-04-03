@@ -264,16 +264,33 @@ def compute_growth_dynamics(
     total_added = new_rev + reactivated_rev
     net_win_loss = retained_rev_current + total_added - retained_rev_prior - lapsed_rev_lost
 
+    # Coverage Ratios (per DHC Growth Dynamics methodology, page 17 of sample)
+    # Ratio 1: upgrade revenue gain / downgrade revenue loss
+    coverage_retained = round(
+        upgraded_rev_gain / max(abs(downgraded_rev_loss), 1), 2
+    ) if downgraded_rev_loss != 0 else None
+
+    # Ratio 2: new + reactivated revenue / lapsed revenue lost
+    coverage_acquisition = round(
+        total_added / max(lapsed_rev_lost, 1), 2
+    ) if lapsed_rev_lost > 0 else None
+
+    avg_gift_prior   = round(retained_rev_prior   / max(len(retained_pool), 1), 2)
+    avg_gift_current = round(retained_rev_current / max(len(retained_pool), 1), 2)
+
     return {
         "retained_donors": {
             "count": len(retained_pool),
             "prior_year_revenue": round(retained_rev_prior, 2),
             "current_year_revenue": round(retained_rev_current, 2),
+            "avg_gift_prior_year": avg_gift_prior,
+            "avg_gift_current_year": avg_gift_current,
             "upgraded_count": len(upgraded),
             "upgraded_revenue_gain": round(upgraded_rev_gain, 2),
             "downgraded_count": len(downgraded),
             "downgraded_revenue_loss": round(downgraded_rev_loss, 2),
             "same_count": len(same),
+            "coverage_ratio": coverage_retained,
         },
         "lapsed_donors": {
             "count": len(lapsed),
@@ -293,6 +310,7 @@ def compute_growth_dynamics(
         },
         "net_win_loss_revenue": round(net_win_loss, 2),
         "win_vs_lapse": "WIN" if net_win_loss >= 0 else "LAPSE",
+        "coverage_ratio_acquisition": coverage_acquisition,
     }
 
 
@@ -415,3 +433,50 @@ def compute_ohp_segment_summary(
         }
 
     return result
+
+
+# ── Large Gift Donors ($10k+) ─────────────────────────────────────────────────
+# Per DHC methodology: donors with any single gift >= threshold are tracked
+# SEPARATELY from the lifecycle analysis. Their revenue is reported as
+# "Large Gift Donors" and added to General Revenue to get Total Revenue.
+# This matches the JVW sample report (pages 4-6) exactly.
+
+LARGE_GIFT_THRESHOLD = 10_000
+
+
+def compute_large_gift_donors(
+    df: pd.DataFrame,
+    analysis_year: int,
+    threshold: float = LARGE_GIFT_THRESHOLD,
+) -> dict:
+    """
+    Identify donors with at least one gift >= threshold in the analysis year.
+
+    Returns revenue breakdown:
+      - large_gift_revenue: all revenue from these donors in analysis year
+      - general_revenue:    revenue from all other donors
+      - total_revenue:      general + large gift
+      - pct_of_total:       large gift as % of total (matches DHC sample label
+                            '% of General Revenue', which is actually % of total)
+    """
+    year_df = df[df["fiscal_year"] == analysis_year]
+    if len(year_df) == 0:
+        return {"threshold": threshold, "donor_count": 0, "revenue": 0.0,
+                "general_revenue": 0.0, "total_revenue": 0.0, "pct_of_total": 0.0}
+
+    large_ids = set(
+        year_df[year_df["donation_amount"] >= threshold]["account_id"].unique()
+    )
+
+    large_rev  = float(year_df[year_df["account_id"].isin(large_ids)]["donation_amount"].sum())
+    general_rev = float(year_df[~year_df["account_id"].isin(large_ids)]["donation_amount"].sum())
+    total_rev   = general_rev + large_rev
+
+    return {
+        "threshold": threshold,
+        "donor_count": len(large_ids),
+        "revenue": round(large_rev, 2),
+        "general_revenue": round(general_rev, 2),
+        "total_revenue": round(total_rev, 2),
+        "pct_of_total": round(large_rev / max(total_rev, 1) * 100, 1),
+    }
